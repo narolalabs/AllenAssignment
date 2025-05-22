@@ -5,8 +5,8 @@ This full-stack app aggregates sidewalk violation data from [NYC OpenData](https
 ## 🔧 Stack
 
 - Laravel 10 (API + DB)
-- React (frontend UI)
-- Puppeteer Node.js script (scraper)
+- React (frontend UI) V - ^16.3.0
+- Puppeteer Node.js script (scraper) - >=6.9.0
 - MySQL (persistent data)
 
 ## 🚀 How It Works
@@ -16,11 +16,13 @@ This full-stack app aggregates sidewalk violation data from [NYC OpenData](https
 3. When address is found in DB, system automatically scrapes BIS data (Legal Adult Use).
 4. Data is paginated, searchable, and rate-limited to 10 requests/day.
 
-## 🧪 Setup
+## 🧪 Setup 
 
 ```bash
 git clone https://github.com/your-username/nyc-violation-app.git
 cd backend
+
+## Start laravel backend:
 cp .env.example .env
 php artisan key:generate
 php artisan migrate
