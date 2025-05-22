@@ -20,9 +20,10 @@ This full-stack app aggregates sidewalk violation data from [NYC OpenData](https
 
 ```bash
 git clone https://github.com/your-username/nyc-violation-app.git
-cd backend
+
 
 ## Start laravel backend:
+cd backend
 cp .env.example .env
 php artisan key:generate
 php artisan migrate
