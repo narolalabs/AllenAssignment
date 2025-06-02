@@ -3,6 +3,8 @@
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 use App\Models\Violation;
+use Illuminate\Support\Facades\Artisan;
+use App\Http\Controllers\ViolationController;
 
 /*
 |--------------------------------------------------------------------------
@@ -19,23 +21,4 @@ Route::middleware('auth:sanctum')->get('/user', function (Request $request) {
     return $request->user();
 });
 
-Route::middleware('rate.limit')->get('/violations', function (Request $request) {
-    $query = Violation::with('bisData'); // <- eager load BIS data
-
-    if ($request->address) {
-        $query->where(function ($q) use ($request) {
-            $q->where('street_name', 'LIKE', '%' . $request->address . '%')
-              ->orWhere('house_number', 'LIKE', '%' . $request->address . '%');
-        });
-    }
-
-    if ($request->borough) {
-        $query->where('borough', $request->borough);
-    }
-
-    if ($request->violation_type) {
-        $query->where('violation_type', $request->violation_type);
-    }
-
-    return $query->paginate(10);
-});
+Route::middleware('rate.limit')->get('/violations', [ViolationController::class, 'getViolations']);

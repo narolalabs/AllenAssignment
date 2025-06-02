@@ -1,52 +1,91 @@
 const puppeteer = require('puppeteer');
 
-// Get CLI args (house number and street)
-const [,, houseNumber, streetName] = process.argv;
+// Get CLI args (borough, house number, and street)
+const [,, borough, houseNumber, streetName] = process.argv;
 
-if (!houseNumber || !streetName) {
-  console.error('Usage: node scrape_bis.js <houseNumber> <streetName>');
+if (!borough || !houseNumber || !streetName) {
+  console.error('Usage: node scrape_bis.js <borough> <houseNumber> <streetName>');
   process.exit(1);
 }
 
-const scrapeLegalAdultUse = async (houseNumber, streetName) => {
+const scrapeLegalAdultUse = async (borough, houseNumber, streetName) => {
   const url = 'https://a810-bisweb.nyc.gov/bisweb/bispi00.jsp';
 
-  // Enable headless: false if you want to see it in action
   const browser = await puppeteer.launch({
-    headless: false, // set false for debugging
-    slowMo: 30,
-    args: ['--no-sandbox', '--disable-setuid-sandbox']
+    headless: false,
+    slowMo: 50,
+    args: [
+      '--no-sandbox',
+      '--disable-setuid-sandbox',
+      '--disable-web-security',  // Disable web security to bypass CSP
+      '--disable-features=IsolateOrigins,site-per-process' // Disable site isolation
+    ]
   });
 
   const page = await browser.newPage();
 
   try {
-    console.log('Navigating to BIS...');
-    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 });
+    // Set a custom user agent
+    await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
 
-    console.log(`Filling form: ${houseNumber} ${streetName}`);
-    await page.select('select[name="boro"]', '1'); // Manhattan = 1
+    // Block analytics and other non-essential resources
+    await page.setRequestInterception(true);
+    page.on('request', (request) => {
+      if (['image', 'stylesheet', 'font', 'script'].includes(request.resourceType()) || request.url().includes('google-analytics')) {
+        request.abort();
+      } else {
+        request.continue();
+      }
+    });
+
+    console.log('Navigating to BIS...');
+    await page.goto(url, { 
+      waitUntil: ['domcontentloaded', 'networkidle0'],
+      timeout: 180000 // Increased timeout to 3 minutes
+    });
+
+    console.log(`Filling form: Borough ${borough}, ${houseNumber} ${streetName}`);
+    
+    // Wait for form elements to be present
+    await page.waitForSelector('#boro1', { timeout: 60000 });
+    await page.waitForSelector('input[name="houseno"]', { timeout: 60000 });
+    await page.waitForSelector('input[name="street"]', { timeout: 60000 });
+
+    await page.select('#boro1', borough);
     await page.type('input[name="houseno"]', houseNumber);
     await page.type('input[name="street"]', streetName);
 
-    await new Promise(resolve => setTimeout(resolve, 500)); // small delay
+    await new Promise(resolve => setTimeout(resolve, 2000)); // Increased delay
 
     console.log('Submitting form...');
-    const formSubmitted = await page.evaluate(() => {
-      const form = document.querySelector('form[action="bispi01.jsp"]');
-      if (form) {
-        form.submit();
-        return true;
-      }
-      return false;
-    });
+    
+    // Click the submit button instead of form.submit()
+    const submitBtn = await page.$('input[type="submit"]');
+    if (!submitBtn) {
+      throw new Error('Submit button not found');
+    }
+    
+    // Click and wait for navigation
+    await Promise.all([
+      page.waitForNavigation({ 
+        waitUntil: ['domcontentloaded', 'networkidle0'],
+        timeout: 180000 // Increased timeout to 3 minutes
+      }),
+      submitBtn.click()
+    ]);
 
-    if (!formSubmitted) {
-      throw new Error('Form not found or failed to submit');
+    console.log('Page loaded, checking content...');
+
+    // Capture any errors on the page
+    const pageErrors = await page.evaluate(() => {
+      return Array.from(document.querySelectorAll('.error')).map(el => el.innerText);
+    });
+    if (pageErrors.length > 0) {
+      console.error('Page errors:', pageErrors);
     }
 
-    await page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 60000 });
-    console.log('Page loaded, checking content...');
+    // Capture a screenshot for debugging
+    await page.screenshot({ path: 'debug-screenshot.png' });
 
     const isLegalAdultUse = await page.evaluate(() => {
       const bodyText = document.body.innerText;
@@ -54,15 +93,18 @@ const scrapeLegalAdultUse = async (houseNumber, streetName) => {
     });
 
     await browser.close();
-    console.log('Scraping done:', isLegalAdultUse);
     // For Laravel shell_exec parsing
     console.log(isLegalAdultUse ? 'true' : 'false');
   } catch (err) {
     console.error('Scraping failed:', err.message);
+
+    // Capture a screenshot on error
+    await page.screenshot({ path: 'error-screenshot.png' });
+
     await browser.close();
     console.log('false');
     process.exit(1);
   }
 };
 
-scrapeLegalAdultUse(houseNumber, streetName);
+scrapeLegalAdultUse(borough, houseNumber, streetName);
