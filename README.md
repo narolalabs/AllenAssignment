@@ -39,7 +39,7 @@ npm start
 
 ## Run the scraper manually (for dev):
 cd ../scraper
-node scrape_bis.js "123" "MAIN ST"
+node scrape_bis.js "110" "W 97 ST"
 
 ##
 We fetch violations from NYC OpenData and persist them in a database for fast lookup. Scraping BIS is done on-demand, only when a matching address is searched, to avoid unnecessary load and legal risk. This hybrid approach balances speed, data freshness, and resource efficiency.

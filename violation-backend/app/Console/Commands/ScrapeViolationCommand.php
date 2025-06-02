@@ -5,6 +5,7 @@ namespace App\Console\Commands;
 use App\Models\BisData;
 use App\Models\Violation;
 use Illuminate\Console\Command;
+use Illuminate\Support\Facades\Log;
 
 class ScrapeViolationCommand extends Command
 {
@@ -13,7 +14,7 @@ class ScrapeViolationCommand extends Command
      *
      * @var string
      */
-    protected $signature = 'scrape:violations';
+    protected $signature = 'scrape:violations {borough} {houseNumber} {streetName}';
 
     /**
      * The console command description.
@@ -27,31 +28,76 @@ class ScrapeViolationCommand extends Command
      */
     public function handle()
     {
-        $this->info("Starting scraping process...");
+        $borough = escapeshellarg($this->argument('borough'));
+        $houseNumber = escapeshellarg($this->argument('houseNumber'));
+        $streetName = escapeshellarg($this->argument('streetName'));
 
-        $violations = Violation::all();
+        $this->info("Scraping data for Borough: $borough, $houseNumber $streetName...");
 
-        foreach ($violations as $violation) {
-            $houseNumber = escapeshellarg($violation->house_number);
-            $streetName = escapeshellarg($violation->street_name);
-
-            $command = "node ../scraper/scrape_bis.js $houseNumber $streetName";
-            $output = trim(shell_exec($command));
-            $isLegalAdultUse = $output === "true";
-
-            BisData::updateOrCreate(
-                [
-                    'house_number' => $violation->house_number,
-                    'street_name' => $violation->street_name,
-                ],
-                [
-                    'legal_adult_use' => $isLegalAdultUse,
-                ]
-            );
-
-            $this->info("{$violation->house_number} {$violation->street_name} → Legal Adult Use: " . ($isLegalAdultUse ? 'Yes' : 'No'));
+        // Use absolute path to the scraper script
+        $scriptPath = realpath(__DIR__ . '/../../../../scraper/scrape_bis.js');
+        if (!$scriptPath) {
+            Log::error("Scraper script not found at the expected path: " . __DIR__ . '/../../../../scraper/scrape_bis.js');
+            $this->error("Scraper script not found. Check the path.");
+            return;
         }
 
-        $this->info("Scraping completed.");
+        $command = "node \"$scriptPath\" $borough $houseNumber $streetName";
+
+        $this->info("Executing command: $command");
+
+        // Log the command being executed
+        Log::info("Executing scraper command: $command");
+
+        // Execute the command and capture both output and errors
+        $output = shell_exec($command . ' 2>&1');
+
+        // Log the raw output from the scraper
+        Log::info("Raw scraper output: $output");
+
+        if ($output === null) {
+            Log::error("Scraper did not produce any output. Check if Node.js is installed and the script path is correct.");
+            $this->error("Scraper did not produce any output. Check logs for details.");
+            return;
+        }
+
+        $isLegalAdultUse = trim($output) === "true";
+
+        Log::info("Parsed scraper output (isLegalAdultUse): " . ($isLegalAdultUse ? 'true' : 'false'));
+
+        BisData::updateOrCreate(
+            [
+                'house_number' => $this->argument('houseNumber'),
+                'street_name' => $this->argument('streetName'),
+            ],
+            [
+                'legal_adult_use' => $isLegalAdultUse,
+            ]
+        );
+
+        // Map borough ID to its corresponding value
+        $boroughMapping = [
+            '1' => 'Manhattan',
+            '2' => 'Bronx',
+            '3' => 'Brooklyn',
+            '4' => 'Queens',
+            '5' => 'Staten Island'
+        ];
+
+        $boroughValue = $boroughMapping[$this->argument('borough')] ?? $this->argument('borough');
+
+        // Also update or create the record in the Violation table
+        Violation::updateOrCreate(
+            [
+                'house_number' => $this->argument('houseNumber'),
+                'street_name' => $this->argument('streetName'),
+            ],
+            [
+                'violation_type' => 'Legal Adult Use', // Example field, adjust as needed
+                'borough' => $boroughValue, // Store the borough value instead of ID
+            ]
+        );
+
+        $this->info("$houseNumber $streetName → Legal Adult Use: " . ($isLegalAdultUse ? 'Yes' : 'No'));
     }
 }
